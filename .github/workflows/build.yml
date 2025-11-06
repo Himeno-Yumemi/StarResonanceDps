@@ -1,110 +1,55 @@
-name: Build Star Resonance DPS
+name: .NET Build and Publish
 
 on:
   push:
-    branches: ["master"]
+    branches: [ "master" ]
   pull_request:
-    branches: ["master"]
-  workflow_dispatch:
-  release:
-    types:
-      - published
-
-env:
-  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
-  DOTNET_NOLOGO: 1
-  Configuration: Release
-  Platform: x64
+    branches: [ "master" ]
 
 jobs:
   build:
     runs-on: windows-latest
+
+    env:
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+      DOTNET_NOLOGO: 1
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: recursive
-          fetch-depth: 0
 
-      - name: Set up .NET SDK
+      - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
-
-      - name: Cache NuGet packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('Directory.Packages.props', '**/*.csproj') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
 
       - name: Restore dependencies
         run: dotnet restore StarResonanceDpsAnalysis.sln
 
       - name: Build solution
-        run: dotnet build StarResonanceDpsAnalysis.sln --configuration $env:Configuration -p:Platform=$env:Platform --no-restore
-
-      - name: Prepare test results directory
-        run: New-Item -ItemType Directory -Force -Path artifacts/test-results | Out-Null
-
-      - name: Run tests
-        run: dotnet test StarResonanceDpsAnalysis.Tests/StarResonanceDpsAnalysis.Tests.csproj --configuration $env:Configuration -p:Platform=$env:Platform --no-build --logger "trx;LogFileName=TestResults.trx" --results-directory artifacts/test-results
-
-      - name: Compute artifact suffix
-        id: artifact_meta
-        run: |
-          if ("${{ github.ref_type }}" -eq "tag") {
-            $suffix = "${{ github.ref_name }}"
-          } else {
-            $suffix = "build-${{ github.run_number }}"
-          }
-          "suffix=$suffix" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+        run: dotnet build StarResonanceDpsAnalysis.sln --configuration Release -p:Platform=x64 --no-restore
 
       - name: Publish WPF app
-        run: dotnet publish StarResonanceDpsAnalysis.WPF/StarResonanceDpsAnalysis.WPF.csproj --configuration $env:Configuration -p:Platform=$env:Platform --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:IncludeAllContentForSelfExtract=true -p:EnableCompressionInSingleFile=true --output artifacts/wpf
+        run: dotnet publish ./StarResonanceDpsAnalysis.WPF/StarResonanceDpsAnalysis.WPF.csproj --configuration Release -p:Platform=x64 --runtime win-x64 --self-contained true --output ./output/WPF -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
 
-      - name: Publish WinForms app
-        run: dotnet publish StarResonanceDpsAnalysis.WinForm/StarResonanceDpsAnalysis.WinForm.csproj --configuration $env:Configuration -p:Platform=$env:Platform --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true --output artifacts/winforms
-
-      - name: Package deliverables
+      - name: List output files
         run: |
-          if (Test-Path artifacts/StarResonanceDpsAnalysis-WPF-${{ steps.artifact_meta.outputs.suffix }}.zip) {
-            Remove-Item artifacts/StarResonanceDpsAnalysis-WPF-${{ steps.artifact_meta.outputs.suffix }}.zip -Force
-          }
-          if (Test-Path artifacts/StarResonanceDpsAnalysis-WinForm-${{ steps.artifact_meta.outputs.suffix }}.zip) {
-            Remove-Item artifacts/StarResonanceDpsAnalysis-WinForm-${{ steps.artifact_meta.outputs.suffix }}.zip -Force
-          }
-          if (Test-Path artifacts/checksums.txt) {
-            Remove-Item artifacts/checksums.txt -Force
-          }
-          Compress-Archive -Path artifacts/wpf/* -DestinationPath artifacts/StarResonanceDpsAnalysis-WPF-${{ steps.artifact_meta.outputs.suffix }}.zip
-          Compress-Archive -Path artifacts/winforms/* -DestinationPath artifacts/StarResonanceDpsAnalysis-WinForm-${{ steps.artifact_meta.outputs.suffix }}.zip
-          Get-ChildItem artifacts -Filter '*.zip' | ForEach-Object {
-            $hash = Get-FileHash $_.FullName -Algorithm SHA256
-            "$($hash.Hash)  $($_.Name)" | Out-File -FilePath artifacts/checksums.txt -Append -Encoding utf8
-          }
+          Write-Host "Listing files under ./output"
+          Get-ChildItem -Path ./output -Recurse
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: starresonance-${{ steps.artifact_meta.outputs.suffix }}
-          path: |
-            artifacts/StarResonanceDpsAnalysis-WPF-${{ steps.artifact_meta.outputs.suffix }}.zip
-            artifacts/StarResonanceDpsAnalysis-WinForm-${{ steps.artifact_meta.outputs.suffix }}.zip
-            artifacts/checksums.txt
-            artifacts/test-results
+          name: starresonance-output-${{ github.run_number }}
+          path: output/**
           if-no-files-found: error
 
-      - name: Publish release assets
-        if: github.ref_type == 'tag' || github.event_name == 'release'
-        uses: softprops/action-gh-release@v2
+      - name: Upload release assets
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
         with:
-          files: |
-            artifacts/StarResonanceDpsAnalysis-WPF-${{ steps.artifact_meta.outputs.suffix }}.zip
-            artifacts/StarResonanceDpsAnalysis-WinForm-${{ steps.artifact_meta.outputs.suffix }}.zip
-            artifacts/checksums.txt
+          files: output/**/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
