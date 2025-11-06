@@ -31,6 +31,9 @@ jobs:
       - name: Build solution
         run: dotnet build StarResonanceDpsAnalysis.sln --configuration Release -p:Platform=x64 --no-restore
 
+      - name: Publish WinForm app
+        run: dotnet publish ./StarResonanceDpsAnalysis.WinForm/StarResonanceDpsAnalysis.WinForm.csproj --configuration Release -p:Platform=x64 --runtime win-x64 --self-contained true --output ./output/WinForm -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+
       - name: Publish WPF app
         run: dotnet publish ./StarResonanceDpsAnalysis.WPF/StarResonanceDpsAnalysis.WPF.csproj --configuration Release -p:Platform=x64 --runtime win-x64 --self-contained true --output ./output/WPF -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
 
