@@ -1,0 +1,83 @@
+name: Build and Publish .NET Apps (MAUI, Electron + Blazor, WPF)
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    env:
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+      DOTNET_NOLOGO: 1
+
+    steps:
+      # Checkout the repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # Set up .NET environment
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      # Restore dependencies
+      - name: Restore dependencies
+        run: dotnet restore StarResonanceDpsAnalysis.sln
+
+      # Build solution
+      - name: Build solution
+        run: dotnet build StarResonanceDpsAnalysis.sln --configuration Release -p:Platform=x64 --no-restore
+
+      # ---- Build MAUI App ----
+      - name: Publish MAUI app
+        run: |
+          dotnet publish ./StarResonanceDpsAnalysis.MAUI/StarResonanceDpsAnalysis.MAUI.csproj \
+          --configuration Release -p:Platform=x64 --runtime win-x64 --self-contained true \
+          --output ./output/MAUI -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
+          -p:PublishTrimmed=true
+
+      # ---- Build Electron + Blazor App ----
+      - name: Build Electron + Blazor app
+        run: |
+          # Install dependencies for Electron
+          npm install --legacy-peer-deps
+          # Build the Electron app using Blazor WebAssembly
+          npm run build:electron
+
+      # ---- Build WPF App ----
+      - name: Publish WPF app
+        run: |
+          dotnet publish ./StarResonanceDpsAnalysis.WPF/StarResonanceDpsAnalysis.WPF.csproj \
+          --configuration Release -p:Platform=x64 --runtime win-x64 --self-contained true \
+          --output ./output/WPF -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
+          -p:PublishTrimmed=true
+
+      # List output files (for debugging purposes)
+      - name: List output files
+        run: |
+          Write-Host "Listing files under ./output"
+          Get-ChildItem -Path ./output -Recurse
+
+      # Upload build artifacts
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: starresonance-output-${{ github.run_number }}
+          path: output/**
+          if-no-files-found: error
+
+      # Upload release assets (only for tags)
+      - name: Upload release assets
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: output/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
